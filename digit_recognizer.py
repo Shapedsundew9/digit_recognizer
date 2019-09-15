@@ -1,14 +1,20 @@
+# Make everything deterministic
+from numpy.random import seed
+seed(1)
+from tensorflow import set_random_seed
+set_random_seed(2)
+
 import os
 import keras
 import random
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from keras.datasets import mnist
 from keras.models import Sequential, load_model
 from keras.layers import Dense, Dropout
 from keras.optimizers import RMSprop, Adam
-from keras.layers.advanced_activations import PReLU, LeakyReLU
+from keras.layers.advanced_activations import LeakyReLU
+from sklearn.metrics import classification_report, confusion_matrix
 
 
 # Training log
@@ -31,7 +37,7 @@ from keras.layers.advanced_activations import PReLU, LeakyReLU
 #    4    |  B2   |   20   |    97.82%    |  96.91%  |      N/A       |
 #    4    |  B3   |   20   |    97.86%    |  97.14%  |      N/A       |
 #    4    |  C1   |   20   |    98.43%    |  97.48%  |      N/A       |
-#    4    |  C2   |   20   |    98.34%    |  97.64%  |      N/A       |
+#    3    |  C1   |   20   |    98.45%    |  97.51%  |     97.53%     |
 
 
 # Kaggle MNIST training and test (submission) sets
@@ -187,14 +193,11 @@ def modelC1(dropout=0.525):
     return model
 
 
-
-
 batch_size = 128
 num_classes = 10
 epochs = 20
 
 (x_train, y_train), (x_test, y_test), x_submission = dataset3()
-
 
 if not os.path.exists('mnist.h5'):
     model = modelC1()
