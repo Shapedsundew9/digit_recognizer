@@ -63,45 +63,29 @@ def datasetA(train, test, TRAIN_FRACTION=2.0/3.0):
     return (x_train / 255.0, y_train), (x_test / 255.0, y_test), x_submission / 255.0, auto_train / 255.0
 
 
-def modelA(size=14, dropout=0.5, leak=0.1):
-    inputs1 = Input(shape=(784,), name="input")
-    x = Dense(512)(inputs1)
-    x = Dropout(dropout)(x)
-    x = LeakyReLU(leak)(x)
-    x = Dense(128)(x)
-    x = Dropout(dropout)(x)
-    x = LeakyReLU(leak)(x)
-    x = Dense(size, name='auto_out')(x)
-    x = LeakyReLU(leak)(x)
-    model1 = Model(inputs=inputs1, outputs=x)
-    model1.summary()
-    model1.compile(loss='mean_squared_error',
-              optimizer=Adam(),
-              metrics=['mean_absolute_percentage_error'])
-
-    inputs2 = Input(shape=(size,))
-    x = Dense(128)(inputs2)
-    x = Dropout(dropout)(x)
-    x = LeakyReLU(leak)(x)
-    x = Dense(512)(x)
-    x = Dropout(dropout)(x)
-    x = LeakyReLU(leak)(x)
-    x = Dense(784)(x)
-    x = LeakyReLU(leak)(x)
-    model2 = Model(inputs=inputs2, outputs=x)
-    model2.summary()
-    model2.compile(loss='mean_squared_error',
-              optimizer=Adam(),
-              metrics=['mean_absolute_percentage_error'])
-
-    x = model2(model1(inputs1))
+def modelA(latent_size=14, dropout=0.5, leak=0.1, layers=[512, 128]):
+    x = inputs1 = Input(shape=(784,), name="Input")
+    for n in layers:
+        x = Dense(n)(x)
+        x = Dropout(dropout)(x)
+        x = LeakyReLU(leak)(x)
+    x = Dense(latent_size, name='Latent')(x)
+    for n in reversed(layers):
+        x = Dense(n)(x)
+        x = Dropout(dropout)(x)
+        x = LeakyReLU(leak)(x)
+    # Output is positive
+    x = Dense(784, activation="relu", name="Output")(x)
     model = Model(inputs=inputs1, outputs=x)
-    model.summary()
+
+    # TODO: Redirect to logging
+    # TODO: Add image
+    # model.summary()
     model.compile(loss='mean_squared_error',
               optimizer=Adam(),
               metrics=['mean_absolute_percentage_error'])
 
-    return model, model1, model2
+    return model
 
 
 def modelA1():
@@ -136,8 +120,8 @@ _, __, ___, auto_train = dataset1()
 earlystop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
 indices, results = train(modelA1, np.arange(auto_train.shape[0]), 'modelA1', auto_train)
 midway = np.sort(results)[int(results.shape[0] / 2)]
-train('modelA1.h5', np.argwhere(results < midway).flatten(), 'modelA1_low', auto_train)
-train('modelA1.h5', np.argwhere(results >= midway).flatten(), 'modelA1_high', auto_train)
+train(modelA1, np.argwhere(results < midway).flatten(), 'modelA1_low', auto_train)
+train(modelA1, np.argwhere(results >= midway).flatten(), 'modelA1_high', auto_train)
 
 #plt.hist(results, bins=140)
 #plt.show()
