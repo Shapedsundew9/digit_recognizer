@@ -121,6 +121,20 @@ def abs_pixel_err_sets(y_true, y_pred, mask):
     return delta, delta[mask], delta[np.logical_not(mask)] 
 
 
+def cluster_stats(r):
+    stats = {"a_min": np.min(r['a']), "a_max": np.max(r['a']), "a_mean": np.mean(r['a'])}
+    stats.update({"b_min": np.min(r['b']), "b_max": np.max(r['b']), "b_mean": np.mean(r['b'])})
+    stats.update({"full_min": np.min(r['full']), "full_max": np.max(r['full']), "full_mean": np.mean(r['full'])})
+    return stats
+
+
+def overlap_stats(r):
+    lhs = np.max((np.min(r['a']), np.min(r['b'])))
+    rhs = np.min((np.max(r['a']), np.max(r['b'])))
+    ratio = r['overlap'] / (np.max(r['full']) - np.min(r['full']))
+    return {"overlap": r['overlap'], "lhs": lhs, "rhs": rhs, "ratio": ratio}
+
+
 # The overlap in mean absolute pixel error between the high distribution
 # and the low distribution. A -ve value is a separation.
 def overlap_distance(y_true, y_pred, mask):
@@ -173,7 +187,7 @@ def analyse(y_true, y_pred, mask, name="model"):
     # Text Output
     print(out_str_prt)
 
-    return {"full": full, "a": a, "b": b, "overlap": overlap, "mask": mask}
+    return {"full": full, "a": a, "b": b, "overlap": overlap, "mask": mask, "name": name}
 
     
 def train(model, mask, model_name, fullset):
@@ -193,15 +207,22 @@ def train(model, mask, model_name, fullset):
                             validation_data=(dataset, dataset))
         model.save(file_name)
 
+    # TODO: If analysis exists don't do this
     model = load_model(file_name)
     return analyse(fullset, model.predict(fullset, verbose=0), mask, model_name)
 
 
 _, __, ___, auto_train = dataset1()
+cluster_matrix = {}
 results = train(modelA1, np.arange(auto_train.shape[0]), 'modelA1', auto_train)
 midway = np.sort(results['full'])[int(results['full'].shape[0] / 2)]
-train(modelA1, results['full'] < midway, 'modelA1_low', auto_train)
-train(modelA1, results['full'] >= midway, 'modelA1_high', auto_train)
+results_1 = train(modelA1, results['full'] < midway, 'modelA1_1', auto_train)
+results_2 = train(modelA1, results['full'] >= midway, 'modelA1_2', auto_train)
+cluster_matrix['modelA1_1'] = cluster_stats(results_1)
+cluster_matrix['modelA1_2'] = cluster_stats(results_2)
+cluster_matrix['modelA1_1']['modelA1_2'] = overlap_stats(results_1)
+cluster_matrix['modelA1_2']['modelA1_1'] = overlap_stats(results_2)
+
 
 #plt.hist(results, bins=140)
 #plt.show()
