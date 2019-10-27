@@ -177,7 +177,7 @@ def analyse(y_true, y_pred, mask, name="model"):
     out_str3 = "a_cnt={0:d}\noverlap_cnt={1:d}"
     out_str3_plt = out_str3.format(a.shape[0], overlap_cnt)
     out_str3 = out_str3.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
-    out_str3_prt = out_str3.format(a.shape[0], b.shape[0], overlap_cnt, full.shape[0])
+    out_str3_prt = out_str3.format(a.shape[0], overlap_cnt)
 
     out_str_plt = out_str1_plt + "\n" + out_str2_plt + "\n" + out_str3_plt
     out_str_prt = name + " " + out_str1_prt + ", " + out_str2_prt + ", " + out_str3_prt
