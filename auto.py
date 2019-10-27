@@ -209,7 +209,7 @@ def train(model, mask, model_name, fullset):
     earlystop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
     if not os.path.exists(file_name):
         if callable(model): model = model()
-        if isinstance(model, str): model = load_model(model)
+        if isinstance(model, str): model = load_model(model + '.h5')
         history = model.fit(dataset, dataset,
                             batch_size=batch_size,
                             epochs=epochs,
