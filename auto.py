@@ -10,6 +10,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import keras.backend as K
 from PIL import Image
 from tqdm import tqdm, trange
 from common import save_obj, load_obj
@@ -25,6 +26,20 @@ from keras.layers import Dense, Dropout, Input, Activation
 from keras.optimizers import RMSprop, Adam
 from keras.callbacks import LambdaCallback
 from keras import metrics
+from functools import partial
+
+
+class color:
+   PURPLE = '\033[95m'
+   CYAN = '\033[96m'
+   DARKCYAN = '\033[36m'
+   BLUE = '\033[94m'
+   GREEN = '\033[92m'
+   YELLOW = '\033[93m'
+   RED = '\033[91m'
+   BOLD = '\033[1m'
+   UNDERLINE = '\033[4m'
+   END = '\033[0m'
 
 
 def load_data():
@@ -81,9 +96,10 @@ def modelA(latent_size=14, dropout=0.5, leak=0.1, layers=[512, 128]):
     # TODO: Redirect to logging
     # TODO: Add image
     # model.summary()
+
     model.compile(loss='mean_squared_error',
               optimizer=Adam(),
-              metrics=['mean_absolute_percentage_error'])
+              metrics=['mean_squared_error'])
 
     return model
 
@@ -92,11 +108,80 @@ def modelA1():
     return modelA()
 
 
-def train(model, indices, model_name, fullset):
+def abs_pixel_err(delta):
+    return np.sum(np.absolute(delta), axis=1) / 784 * 255
+
+
+def mean_abs_pixel_err(delta):
+    return np.mean(abs_pixel_err(delta))
+
+
+def abs_pixel_err_sets(y_true, y_pred, mask):
+    delta = abs_pixel_err(y_pred - y_true)
+    return delta, delta[mask], delta[np.logical_not(mask)] 
+
+
+# The overlap in mean absolute pixel error between the high distribution
+# and the low distribution. A -ve value is a separation.
+def overlap_distance(y_true, y_pred, mask):
+    full, a, b = abs_pixel_err_sets(y_true, y_pred, mask)
+    a_mean = np.mean(a)
+    b_mean = np.mean(b)
+    overlap = np.max(a) - np.min(b) if a_mean < b_mean else np.max(b) - np.min(a)
+    return overlap, full, a, b
+
+
+def analyse(y_true, y_pred, mask, name="model"):
+    STEPS = 100
+    overlap, full, a, b = overlap_distance(y_true, y_pred, mask)
+    f_min, f_max = np.min(full), np.max(full)
+
+    # Distribution chart
+    # Data
+    step = (f_max - f_min) / STEPS
+    bins = np.arange(f_min - step, f_max + step, step)
+    a_hist = np.histogram(a, bins)
+    b_hist = np.histogram(b, bins)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(16,8))
+    pa = ax.bar(a_hist[1][:-1], a_hist[0], width=0.4, color='r')
+    pb = ax.bar(b_hist[1][:-1], b_hist[0], width=0.4, bottom=a_hist[0], color='b')
+
+    # Analysis
+    out_str1 = "Mean absolute pixel error\nFull={0:.2f}\na={1:.2f}\nb={2:.2f}"
+    out_str1_plt = out_str1.format(np.mean(full), np.mean(a), np.mean(b))
+    out_str1 = out_str1.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
+    out_str1_prt = out_str1.format(np.mean(full), np.mean(a), np.mean(b))
+    out_str2 = "a(min, max)=({0:.2f},{1:.2f})\nb(min, max)=({2:.2f},{3:.2f})\noverlap={4:.2f}"
+    out_str2_plt = out_str2.format(np.min(a), np.max(a), np.min(b), np.max(b), overlap)
+    out_str2 = out_str2.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
+    out_str2_prt = out_str2.format(np.min(a), np.max(a), np.min(b), np.max(b), overlap)
+    out_str_plt = out_str1_plt + "\n" + out_str2_plt
+    out_str_prt = out_str1_prt + ", " + out_str2_prt
+
+    # Annotation
+    bbox_props = dict(boxstyle="Round,pad=0.3", fc="w", lw=1)
+    ax.text(0.8, 0.5, out_str_plt, ha="left", va="center", size=12, bbox=bbox_props, transform=ax.transAxes)
+    ax.set_ylabel('Count')
+    ax.set_xlabel('Mean Absolute Pixel Error')
+    ax.set_title('Distribution of Sets')
+    ax.legend((pa[0], pb[0]), ('a', 'b'))
+    fig.savefig(name + ".png")
+    plt.clf()
+
+    # Text Output
+    print(out_str_prt)
+
+    return {"full": full, "a": a, "b": b, "overlap": overlap, "mask": mask}
+
+    
+def train(model, mask, model_name, fullset):
     epochs = 50
     batch_size = 128
-    dataset = fullset[indices]
+    dataset = fullset[mask]
     file_name = model_name + '.h5'
+    earlystop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
     if not os.path.exists(file_name):
         if callable(model): model = model()
         if isinstance(model, str): model = load_model(model)
@@ -109,19 +194,14 @@ def train(model, indices, model_name, fullset):
         model.save(file_name)
 
     model = load_model(file_name)
-    results = np.sum(np.absolute(model.predict(dataset, verbose=0) - dataset), axis=1) / 784 * 255
-    print(model_name, " mean error per pixel (data set): ", np.mean(results))
-    results = np.sum(np.absolute(model.predict(fullset, verbose=0) - fullset), axis=1) / 784 * 255
-    print(model_name, " mean error per pixel (full set): ", np.mean(results))
-    return indices, results
+    return analyse(fullset, model.predict(fullset, verbose=0), mask, model_name)
 
 
 _, __, ___, auto_train = dataset1()
-earlystop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
-indices, results = train(modelA1, np.arange(auto_train.shape[0]), 'modelA1', auto_train)
-midway = np.sort(results)[int(results.shape[0] / 2)]
-train(modelA1, np.argwhere(results < midway).flatten(), 'modelA1_low', auto_train)
-train(modelA1, np.argwhere(results >= midway).flatten(), 'modelA1_high', auto_train)
+results = train(modelA1, np.arange(auto_train.shape[0]), 'modelA1', auto_train)
+midway = np.sort(results['full'])[int(results['full'].shape[0] / 2)]
+train(modelA1, results['full'] < midway, 'modelA1_low', auto_train)
+train(modelA1, results['full'] >= midway, 'modelA1_high', auto_train)
 
 #plt.hist(results, bins=140)
 #plt.show()
