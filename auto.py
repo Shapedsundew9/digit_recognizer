@@ -122,32 +122,35 @@ def abs_pixel_err_sets(y_true, y_pred, mask):
 
 
 def cluster_stats(r):
+    lhs = max((np.min(r['a']), np.min(r['b'])))
+    rhs = min((np.max(r['a']), np.max(r['b'])))
+    a_samples_in_overlap = np.sum(r['a'][np.logical_and(r['a'] >= lhs, r['a'] <= rhs)])
+    b_samples_in_overlap = np.sum(r['b'][np.logical_and(r['b'] >= lhs, r['b'] <= rhs)])
+    frac = (a_samples_in_overlap + b_samples_in_overlap) / r['full'].shape[0]
+    frac_a = a_samples_in_overlap / r['a'].shape[0]
+    frac_b = b_samples_in_overlap / r['b'].shape[0]
+
     stats = {"a_min": np.min(r['a']), "a_max": np.max(r['a']), "a_mean": np.mean(r['a'])}
     stats.update({"b_min": np.min(r['b']), "b_max": np.max(r['b']), "b_mean": np.mean(r['b'])})
     stats.update({"full_min": np.min(r['full']), "full_max": np.max(r['full']), "full_mean": np.mean(r['full'])})
+    stats.update({"overlap": r['overlap'], "lhs": lhs, "rhs": rhs, "frac": frac, "frac_a": frac_a, "frac_b": frac_b})
+    stats.update(r)
     return stats
-
-
-def overlap_stats(r):
-    lhs = np.max((np.min(r['a']), np.min(r['b'])))
-    rhs = np.min((np.max(r['a']), np.max(r['b'])))
-    ratio = r['overlap'] / (np.max(r['full']) - np.min(r['full']))
-    return {"overlap": r['overlap'], "lhs": lhs, "rhs": rhs, "ratio": ratio}
 
 
 # The overlap in mean absolute pixel error between the high distribution
 # and the low distribution. A -ve value is a separation.
 def overlap_distance(y_true, y_pred, mask):
     full, a, b = abs_pixel_err_sets(y_true, y_pred, mask)
-    a_mean = np.mean(a)
-    b_mean = np.mean(b)
-    overlap = np.max(a) - np.min(b) if a_mean < b_mean else np.max(b) - np.min(a)
-    return overlap, full, a, b
+    lhs = max((np.min(a), np.min(b)))
+    rhs = min((np.max(a), np.max(b)))
+    overlap_count = np.sum(np.logical_and(a > lhs, a < rhs))
+    return rhs - lhs, int(overlap_count), full, a, b
 
 
 def analyse(y_true, y_pred, mask, name="model"):
     STEPS = 100
-    overlap, full, a, b = overlap_distance(y_true, y_pred, mask)
+    overlap, overlap_cnt, full, a, b = overlap_distance(y_true, y_pred, mask)
     f_min, f_max = np.min(full), np.max(full)
 
     # Distribution chart
@@ -171,15 +174,20 @@ def analyse(y_true, y_pred, mask, name="model"):
     out_str2_plt = out_str2.format(np.min(a), np.max(a), np.min(b), np.max(b), overlap)
     out_str2 = out_str2.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
     out_str2_prt = out_str2.format(np.min(a), np.max(a), np.min(b), np.max(b), overlap)
-    out_str_plt = out_str1_plt + "\n" + out_str2_plt
-    out_str_prt = out_str1_prt + ", " + out_str2_prt
+    out_str3 = "a_cnt={0:d}\noverlap_cnt={1:d}"
+    out_str3_plt = out_str3.format(a.shape[0], overlap_cnt)
+    out_str3 = out_str3.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
+    out_str3_prt = out_str3.format(a.shape[0], b.shape[0], overlap_cnt, full.shape[0])
+
+    out_str_plt = out_str1_plt + "\n" + out_str2_plt + "\n" + out_str3_plt
+    out_str_prt = name + " " + out_str1_prt + ", " + out_str2_prt + ", " + out_str3_prt
 
     # Annotation
     bbox_props = dict(boxstyle="Round,pad=0.3", fc="w", lw=1)
     ax.text(0.8, 0.5, out_str_plt, ha="left", va="center", size=12, bbox=bbox_props, transform=ax.transAxes)
     ax.set_ylabel('Count')
     ax.set_xlabel('Mean Absolute Pixel Error')
-    ax.set_title('Distribution of Sets')
+    ax.set_title(name + ' Distribution of Sets')
     ax.legend((pa[0], pb[0]), ('a', 'b'))
     fig.savefig(name + ".png")
     plt.clf()
@@ -187,7 +195,10 @@ def analyse(y_true, y_pred, mask, name="model"):
     # Text Output
     print(out_str_prt)
 
-    return {"full": full, "a": a, "b": b, "overlap": overlap, "mask": mask, "name": name}
+    analysis = {"full": full, "a": a, "b": b, "overlap": overlap, "mask": mask, "name": name}
+    analysis.update({"a_cnt": a.shape[0], "b_cnt": b.shape[0]})
+    analysis.update({"overlap_cnt": overlap_cnt, "full_cnt": full.shape[0]})
+    return analysis
 
     
 def train(model, mask, model_name, fullset):
@@ -212,16 +223,42 @@ def train(model, mask, model_name, fullset):
     return analyse(fullset, model.predict(fullset, verbose=0), mask, model_name)
 
 
+class model_name_generator:
+
+    def __init__(self, base_name, start_num=0):
+        self.base_name = base_name
+        self.next_num = start_num
+
+    def get_next(self, num=1):
+        if num == 1:
+            ret_val = self.base_name + '_' + str(self.next_num)
+            self.next_num += 1
+        else:
+            ret_val = (self.base_name + '_' + str(i) for i in range(self.next_num, self.next_num + num))
+            self.next_num += num
+        return ret_val
+
+    def get_last(self):
+        return self.base_name + '_' + str(self.next_num - 1)
+
+
 _, __, ___, auto_train = dataset1()
 cluster_matrix = {}
-results = train(modelA1, np.arange(auto_train.shape[0]), 'modelA1', auto_train)
+model_names = model_name_generator('modelA1')
+results = train(modelA1, np.arange(auto_train.shape[0]), model_names.get_next(), auto_train)
 midway = np.sort(results['full'])[int(results['full'].shape[0] / 2)]
-results_1 = train(modelA1, results['full'] < midway, 'modelA1_1', auto_train)
-results_2 = train(modelA1, results['full'] >= midway, 'modelA1_2', auto_train)
-cluster_matrix['modelA1_1'] = cluster_stats(results_1)
-cluster_matrix['modelA1_2'] = cluster_stats(results_2)
-cluster_matrix['modelA1_1']['modelA1_2'] = overlap_stats(results_1)
-cluster_matrix['modelA1_2']['modelA1_1'] = overlap_stats(results_2)
+results_1 = train(modelA1, results['full'] < midway, model_names.get_next(), auto_train)
+cluster_matrix[model_names.get_last()] = cluster_stats(results_1)
+
+while cluster_matrix[model_names.get_last()]['overlap'] > 0:
+    cluster = cluster_matrix[model_names.get_last()]
+    mask = cluster['full'] < cluster['lhs']
+    results = train(modelA1, mask, model_names.get_next(), auto_train)
+    cluster_matrix[model_names.get_last()] = cluster_stats(results)
+    save_obj(cluster_matrix, 'cluster_matrix.obj')
+
+
+
 
 
 #plt.hist(results, bins=140)
