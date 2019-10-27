@@ -253,7 +253,7 @@ cluster_matrix[model_names.get_last()] = cluster_stats(results_1)
 while cluster_matrix[model_names.get_last()]['overlap'] > 0:
     cluster = cluster_matrix[model_names.get_last()]
     mask = cluster['full'] < cluster['lhs']
-    results = train(modelA1, mask, model_names.get_next(), auto_train)
+    results = train(model_names.get_last(), mask, model_names.get_next(), auto_train)
     cluster_matrix[model_names.get_last()] = cluster_stats(results)
     save_obj(cluster_matrix, 'cluster_matrix.obj')
 
