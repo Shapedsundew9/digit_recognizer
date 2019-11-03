@@ -78,7 +78,7 @@ def datasetA(train, test, TRAIN_FRACTION=2.0/3.0):
     return (x_train / 255.0, y_train), (x_test / 255.0, y_test), x_submission / 255.0, auto_train / 255.0
 
 
-def modelA(latent_size=14, dropout=0.5, leak=0.1, layers=[512, 128]):
+def modelA(latent_size=18, dropout=0.5, leak=0.1, layers=[784, 784]):
     x = inputs1 = Input(shape=(784,), name="Input")
     for n in layers:
         x = Dense(n)(x)
@@ -90,7 +90,7 @@ def modelA(latent_size=14, dropout=0.5, leak=0.1, layers=[512, 128]):
         x = Dropout(dropout)(x)
         x = LeakyReLU(leak)(x)
     # Output is positive
-    x = Dense(784, activation="relu", name="Output")(x)
+    x = Dense(784, activation="sigmoid", name="Output")(x)
     model = Model(inputs=inputs1, outputs=x)
 
     # TODO: Redirect to logging
@@ -222,6 +222,7 @@ def train(model, mask, model_name, fullset, cluster_matrix=None, epochs=500, bat
     else:
         model = load_model(file_name)
         analysis = analyse(fullset, model.predict(fullset, verbose=0), mask, model_name)
+        analysis["model"] = model
     return analysis
 
 
@@ -253,26 +254,8 @@ class model_name_generator:
 
 _, __, ___, auto_train = dataset1()
 
-latent_layer_size = 10
-cluster_matrix_file = 'cluster_matrix_' + str(latent_layer_size) + '.obj'
-cluster_matrix = {} #load_obj(cluster_matrix_file)
+latent_layer_size = 14
 model_names = model_name_generator('modelA')
 model_names.set_extension(str(latent_layer_size))
 model = lambda:modelA(latent_size=latent_layer_size)
-results = train(model, np.arange(auto_train.shape[0]), model_names.get_next(), auto_train, cluster_matrix)
-midway = np.sort(results['full'])[int(results['full'].shape[0] / 2)]
-results_1 = train(modelA1, results['full'] < midway, model_names.get_next(), auto_train)
-cluster_matrix[model_names.get_last()] = cluster_stats(results_1)
-
-pick_up_b = False
-p = 0
-while cluster_matrix[model_names.get_last()]['overlap'] > 0:
-    cluster = cluster_matrix[model_names.get_last()]
-    limit = cluster['lhs'] + (cluster['rhs'] - cluster['lhs']) / 2 if pick_up_b else cluster['lhs']
-    mask = cluster['full'] < limit
-    results = train(model_names.get_last(), mask, model_names.get_next(), auto_train, cluster_matrix)
-    if (cluster['ao_cnt'] + 0.01 * cluster['a_cnt']) < results['ao_cnt']: pick_up_b = True
-    cluster_matrix[model_names.get_last()] = cluster_stats(results)
-    save_obj(cluster_matrix, cluster_matrix_file)
-    p+=1
-    if p == 35: break
+results = train(model, np.arange(auto_train.shape[0]), model_names.get_next(), auto_train)
