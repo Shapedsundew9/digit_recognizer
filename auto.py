@@ -144,13 +144,14 @@ def overlap_distance(y_true, y_pred, mask):
     full, a, b = abs_pixel_err_sets(y_true, y_pred, mask)
     lhs = max((np.min(a), np.min(b)))
     rhs = min((np.max(a), np.max(b)))
-    overlap_count = np.sum(np.logical_and(a > lhs, a < rhs))
-    return rhs - lhs, int(overlap_count), full, a, b
+    ao_cnt = np.sum(np.logical_and(a > lhs, a < rhs))
+    bo_cnt = np.sum(np.logical_and(b > lhs, b < rhs))
+    return rhs - lhs, int(ao_cnt), int(bo_cnt), full, a, b
 
 
 def analyse(y_true, y_pred, mask, name="model"):
     STEPS = 100
-    overlap, overlap_cnt, full, a, b = overlap_distance(y_true, y_pred, mask)
+    overlap, ao_cnt, bo_cnt, full, a, b = overlap_distance(y_true, y_pred, mask)
     f_min, f_max = np.min(full), np.max(full)
 
     # Distribution chart
@@ -174,10 +175,10 @@ def analyse(y_true, y_pred, mask, name="model"):
     out_str2_plt = out_str2.format(np.min(a), np.max(a), np.min(b), np.max(b), overlap)
     out_str2 = out_str2.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
     out_str2_prt = out_str2.format(np.min(a), np.max(a), np.min(b), np.max(b), overlap)
-    out_str3 = "a_cnt={0:d}\noverlap_cnt={1:d}"
-    out_str3_plt = out_str3.format(a.shape[0], overlap_cnt)
+    out_str3 = "a_cnt={0:d}\nao_cnt={1:d}\nbo_cnt={2:d}\ncnt={3:d}"
+    out_str3_plt = out_str3.format(a.shape[0], ao_cnt, bo_cnt, ao_cnt + bo_cnt)
     out_str3 = out_str3.replace("{", color.BOLD + "{").replace("}", "}" + color.END).replace("\n", ", ")
-    out_str3_prt = out_str3.format(a.shape[0], overlap_cnt)
+    out_str3_prt = out_str3.format(a.shape[0], ao_cnt, bo_cnt, ao_cnt + bo_cnt)
 
     out_str_plt = out_str1_plt + "\n" + out_str2_plt + "\n" + out_str3_plt
     out_str_prt = name + " " + out_str1_prt + ", " + out_str2_prt + ", " + out_str3_prt
@@ -190,20 +191,18 @@ def analyse(y_true, y_pred, mask, name="model"):
     ax.set_title(name + ' Distribution of Sets')
     ax.legend((pa[0], pb[0]), ('a', 'b'))
     fig.savefig(name + ".png")
-    plt.clf()
+    plt.close('all')
 
     # Text Output
     print(out_str_prt)
 
     analysis = {"full": full, "a": a, "b": b, "overlap": overlap, "mask": mask, "name": name}
     analysis.update({"a_cnt": a.shape[0], "b_cnt": b.shape[0]})
-    analysis.update({"overlap_cnt": overlap_cnt, "full_cnt": full.shape[0]})
+    analysis.update({"bo_cnt": bo_cnt, "ao_cnt": ao_cnt, "full_cnt": full.shape[0]})
     return analysis
 
     
-def train(model, mask, model_name, fullset):
-    epochs = 50
-    batch_size = 128
+def train(model, mask, model_name, fullset, cluster_matrix=None, epochs=500, batch_size=128):
     dataset = fullset[mask]
     file_name = model_name + '.h5'
     earlystop = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
@@ -218,48 +217,62 @@ def train(model, mask, model_name, fullset):
                             validation_data=(dataset, dataset))
         model.save(file_name)
 
-    # TODO: If analysis exists don't do this
-    model = load_model(file_name)
-    return analyse(fullset, model.predict(fullset, verbose=0), mask, model_name)
+    if (not cluster_matrix is None) and model_name in cluster_matrix:
+        analysis = cluster_matrix[model_name]
+    else:
+        model = load_model(file_name)
+        analysis = analyse(fullset, model.predict(fullset, verbose=0), mask, model_name)
+    return analysis
 
 
 class model_name_generator:
 
     def __init__(self, base_name, start_num=0):
         self.base_name = base_name
+        self.ext = ""
+        self.current = self.base_name
         self.next_num = start_num
+
+    def set_extension(self, ext):
+        self.ext = ext
+        self.current = self.base_name + self.ext
+        self.next_num = 0
 
     def get_next(self, num=1):
         if num == 1:
-            ret_val = self.base_name + '_' + str(self.next_num)
+            ret_val = self.current + '_' + str(self.next_num)
             self.next_num += 1
         else:
-            ret_val = (self.base_name + '_' + str(i) for i in range(self.next_num, self.next_num + num))
+            ret_val = (self.current + '_' + str(i) for i in range(self.next_num, self.next_num + num))
             self.next_num += num
         return ret_val
 
     def get_last(self):
-        return self.base_name + '_' + str(self.next_num - 1)
+        return self.current + '_' + str(self.next_num - 1)
 
 
 _, __, ___, auto_train = dataset1()
-cluster_matrix = {}
-model_names = model_name_generator('modelA1')
-results = train(modelA1, np.arange(auto_train.shape[0]), model_names.get_next(), auto_train)
+
+latent_layer_size = 10
+cluster_matrix_file = 'cluster_matrix_' + str(latent_layer_size) + '.obj'
+cluster_matrix = {} #load_obj(cluster_matrix_file)
+model_names = model_name_generator('modelA')
+model_names.set_extension(str(latent_layer_size))
+model = lambda:modelA(latent_size=latent_layer_size)
+results = train(model, np.arange(auto_train.shape[0]), model_names.get_next(), auto_train, cluster_matrix)
 midway = np.sort(results['full'])[int(results['full'].shape[0] / 2)]
 results_1 = train(modelA1, results['full'] < midway, model_names.get_next(), auto_train)
 cluster_matrix[model_names.get_last()] = cluster_stats(results_1)
 
+pick_up_b = False
+p = 0
 while cluster_matrix[model_names.get_last()]['overlap'] > 0:
     cluster = cluster_matrix[model_names.get_last()]
-    mask = cluster['full'] < cluster['lhs']
-    results = train(model_names.get_last(), mask, model_names.get_next(), auto_train)
+    limit = cluster['lhs'] + (cluster['rhs'] - cluster['lhs']) / 2 if pick_up_b else cluster['lhs']
+    mask = cluster['full'] < limit
+    results = train(model_names.get_last(), mask, model_names.get_next(), auto_train, cluster_matrix)
+    if (cluster['ao_cnt'] + 0.01 * cluster['a_cnt']) < results['ao_cnt']: pick_up_b = True
     cluster_matrix[model_names.get_last()] = cluster_stats(results)
-    save_obj(cluster_matrix, 'cluster_matrix.obj')
-
-
-
-
-
-#plt.hist(results, bins=140)
-#plt.show()
+    save_obj(cluster_matrix, cluster_matrix_file)
+    p+=1
+    if p == 35: break
