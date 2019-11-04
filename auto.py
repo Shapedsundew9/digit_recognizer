@@ -254,7 +254,7 @@ class model_name_generator:
 
 _, __, ___, auto_train = dataset1()
 
-latent_layer_size = 14
+latent_layer_size = 30
 model_names = model_name_generator('modelA')
 model_names.set_extension(str(latent_layer_size))
 model = lambda:modelA(latent_size=latent_layer_size)
