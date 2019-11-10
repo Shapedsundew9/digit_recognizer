@@ -78,7 +78,7 @@ def datasetA(train, test, TRAIN_FRACTION=2.0/3.0):
     return (x_train / 255.0, y_train), (x_test / 255.0, y_test), x_submission / 255.0, auto_train / 255.0
 
 
-def modelA(latent_size=18, dropout=0.5, leak=0.1, layers=[784, 784]):
+def modelA(latent_size=30, dropout=0.5, leak=0.1, layers=[784, 784]):
     x = inputs1 = Input(shape=(784,), name="Input")
     for n in layers:
         x = Dense(n)(x)
