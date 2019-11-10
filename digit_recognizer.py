@@ -53,6 +53,7 @@ from itertools import combinations
 #    4    |  C1   |   20   |    98.43%    |  97.48%  |      N/A       |
 #    3    |  C1   |   20   |    98.45%    |  97.51%  |     97.53%     |
 #    5    |  C1   |   50   |    99.28%    |  98.19%  |     98.19%     |
+#    5    |  C2   |   40   |    98.46%    |  97.83%  |      N/A       |
 
 
 # Kaggle MNIST training and test (submission) sets
@@ -210,6 +211,20 @@ def modelC1(dropout=0.525):
               metrics=['accuracy'])
     return model
 
+
+def modelC2(dropout=0.5, leak=0.1, layers=[784, 784]):
+    x = inputs1 = Input(shape=(784,), name="Input")
+    for n in layers:
+        x = Dense(n)(x)
+        x = Dropout(dropout)(x)
+        x = LeakyReLU(leak)(x)
+    x = Dense(10, activation="softmax", name="Output")(x)
+    model = Model(inputs=inputs1, outputs=x)
+    model.compile(loss='categorical_crossentropy',
+              optimizer=Adam(),
+              metrics=['accuracy'])
+
+    return model
           
 batch_size = 128
 num_classes = 10
@@ -219,7 +234,7 @@ epochs = 500
 earlystop = EarlyStopping(monitor='val_acc', patience=20, verbose=1, restore_best_weights=True)
 
 if not os.path.exists('mnist.h5'):
-    model = modelC1()
+    model = modelC2()
     history = model.fit(x_train, y_train,
                         batch_size=batch_size,
                         epochs=epochs,
